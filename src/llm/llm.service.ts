@@ -1,7 +1,13 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Ollama, type ChatResponse, type Message, type Options } from 'ollama';
 import { upstreamUnavailable, validationFailed } from './api-error';
-import { formatKeepAlive, getBooleanEnv, getStringEnv, parseKeepAlive } from './runtime';
+import {
+  formatKeepAlive,
+  getBooleanEnv,
+  getStringEnv,
+  getStringListEnv,
+  parseKeepAlive,
+} from './runtime';
 import { createApiMeta } from './response-meta';
 import type {
   HealthResponse,
@@ -18,6 +24,7 @@ import type {
 } from './types';
 
 const DEFAULT_MODEL = 'qwen3.5:9b';
+const DEFAULT_MODEL_LIST = ['qwen3.5:9b', 'gemma4:e4b'];
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434';
 const MODEL_SLOTS = 1;
 const RECENT_DURATION_SAMPLE_SIZE = 20;
@@ -91,7 +98,11 @@ export type StreamEvent =
 @Injectable()
 export class LlmService implements OnModuleInit {
   private readonly logger = new Logger(LlmService.name);
-  private readonly modelId = getStringEnv('OLLAMA_MODEL', DEFAULT_MODEL);
+  private readonly availableModels = getStringListEnv('OLLAMA_MODELS', DEFAULT_MODEL_LIST);
+  private readonly modelId = selectConfiguredModel(
+    getStringEnv('OLLAMA_MODEL', DEFAULT_MODEL),
+    this.availableModels,
+  );
   private readonly ollamaHost = getStringEnv('OLLAMA_HOST', DEFAULT_OLLAMA_HOST);
   private readonly keepAlive = parseKeepAlive(getStringEnv('OLLAMA_KEEP_ALIVE', '-1'));
   private readonly preloadModel = getBooleanEnv('PRELOAD_MODEL', true);
@@ -263,6 +274,7 @@ export class LlmService implements OnModuleInit {
       meta: createApiMeta(correlationId),
       data: {
         modelId: this.modelId,
+        availableModels: this.availableModels,
         ready: state.modelAvailable,
         loaded: state.loaded,
         keepAlive: this.keepAliveText,
@@ -708,6 +720,16 @@ function normalizeResponseFormat(value: unknown): 'text' | 'json' {
   }
 
   throw validationFailed('options.responseFormat must be text or json.');
+}
+
+function selectConfiguredModel(modelId: string, availableModels: string[]): string {
+  if (availableModels.includes(modelId)) {
+    return modelId;
+  }
+
+  throw new Error(
+    `OLLAMA_MODEL must be one of OLLAMA_MODELS. Received "${modelId}". Allowed: ${availableModels.join(', ')}`,
+  );
 }
 
 function normalizePriority(value: RequestContext['priority']): NormalizedPriority {

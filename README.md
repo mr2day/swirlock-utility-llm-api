@@ -1,6 +1,6 @@
-# Utility LLM Model Host
+# Swirlock LLM Server
 
-Small NestJS model-host server for the local Ollama model `qwen3.5:9b`.
+Small NestJS model-host server for one local Ollama model.
 
 This service is intentionally agnostic. It does not know whether callers are doing chat, RAG support, memory work, classification, or image understanding. Its job is to expose the model safely, keep it loaded, and serialize access to the local model runner.
 
@@ -22,6 +22,34 @@ http://<this-computer-lan-ip>:3000/v2/infer
 ```
 
 Make sure Windows Firewall allows inbound TCP traffic on port `3000`.
+
+## Model Selection
+
+The server hosts exactly one model per running process. Choose it at startup with `OLLAMA_MODEL`.
+The model must be present in `OLLAMA_MODELS`, a comma-separated allow-list:
+
+```env
+OLLAMA_MODELS=qwen3.5:9b,gemma4:e4b
+OLLAMA_MODEL=qwen3.5:9b
+```
+
+For the main LLM computer, use:
+
+```env
+OLLAMA_MODEL=gemma4:e4b
+```
+
+For the utility LLM computer, keep:
+
+```env
+OLLAMA_MODEL=qwen3.5:9b
+```
+
+If you add another Ollama model later, add it to `OLLAMA_MODELS` first. The server refuses to start
+if `OLLAMA_MODEL` is not in that list, so a typo cannot silently launch the wrong model.
+
+Image input is controlled separately with `MODEL_IMAGE_INPUT`. Keep it `true` for vision-capable
+models. Set it to `false` for a text-only model.
 
 ## Browser Test Page
 
@@ -138,6 +166,17 @@ Response:
 }
 ```
 
+`GET /v2/model/status` reports the active model and the configured model list:
+
+```json
+{
+  "data": {
+    "modelId": "qwen3.5:9b",
+    "availableModels": ["qwen3.5:9b", "gemma4:e4b"]
+  }
+}
+```
+
 ## Streaming Inference
 
 Connect to:
@@ -233,4 +272,5 @@ pm2 save
 
 - Ollama must be running locally on this machine.
 - `qwen3.5:9b` is configured by default and can be changed with `OLLAMA_MODEL`.
-- This host is the Utility LLM profile of the Swirlock v2 Model Host API.
+- `gemma4:e4b` is included in the default `OLLAMA_MODELS` allow-list for the main LLM machine.
+- This host implements the Swirlock v2 Model Host API.

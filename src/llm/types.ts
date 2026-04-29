@@ -86,6 +86,7 @@ export type HealthResponse = ApiEnvelope<HealthData>;
 
 export interface ModelStatusData {
   modelId: string;
+  availableModels: string[];
   ready: boolean;
   loaded: boolean;
   keepAlive: string;

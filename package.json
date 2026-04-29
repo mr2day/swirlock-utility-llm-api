@@ -1,7 +1,7 @@
 {
-  "name": "swirlock-utility-llm-api",
+  "name": "swirlock-llm-server",
   "version": "1.0.0",
-  "description": "LAN-accessible model host API for a local Ollama vision-language model.",
+  "description": "LAN-accessible model host server for a local Ollama model.",
   "main": "dist/main.js",
   "scripts": {
     "build": "nest build",
@@ -13,20 +13,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mr2day/swirlock-utility-llm-api.git"
+    "url": "git+https://github.com/mr2day/swirlock-llm-server.git"
   },
   "keywords": [
     "nestjs",
     "ollama",
-    "qwen"
+    "qwen",
+    "gemma"
   ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/mr2day/swirlock-utility-llm-api/issues"
+    "url": "https://github.com/mr2day/swirlock-llm-server/issues"
   },
-  "homepage": "https://github.com/mr2day/swirlock-utility-llm-api#readme",
+  "homepage": "https://github.com/mr2day/swirlock-llm-server#readme",
   "dependencies": {
     "@nestjs/common": "^11.1.19",
     "@nestjs/core": "^11.1.19",

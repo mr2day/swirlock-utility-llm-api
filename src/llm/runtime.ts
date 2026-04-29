@@ -3,6 +3,20 @@ export function getStringEnv(name: string, fallback: string): string {
   return value && value.trim().length > 0 ? value : fallback;
 }
 
+export function getStringListEnv(name: string, fallback: string[]): string[] {
+  const value = process.env[name];
+  if (!value || value.trim().length === 0) {
+    return fallback;
+  }
+
+  const values = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  return values.length > 0 ? values : fallback;
+}
+
 export function getNumberEnv(name: string, fallback: number): number {
   const value = process.env[name];
   if (!value) {
