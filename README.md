@@ -1,67 +1,164 @@
 # Swirlock LLM Host
 
-Small NestJS model-host server for one local Ollama model.
+NestJS model-host service for one local Ollama model.
 
-This service is intentionally agnostic. It does not know whether callers are doing chat, RAG support, memory work, classification, or image understanding. Its job is to expose the model safely, keep it loaded, and serialize access to the local model runner.
+This repo implements the Swirlock `v2` Model Host API. It is intentionally an
+agnostic model appliance: it owns model availability, inference transport,
+health/status, lifecycle commands, and local-machine protection. It must not own
+chat orchestration, RAG semantics, memory policy, prompt assembly policy, or
+business task interpretation.
 
-It accepts text plus optional image input and returns text only. It does not support image generation.
+## Agent Brief
 
-## Setup
+Read this before changing code:
 
-```powershell
-npm install
-npm run build
-npm run start:prod
-```
+- This service hosts exactly one configured Ollama model per running process.
+- Runtime settings have one source of truth: `host.config.cjs`.
+- Do not reintroduce `.env`, `.env.example`, source-code model defaults, or
+  duplicate PM2 environment blocks for the same settings.
+- `ecosystem.config.cjs` imports `host.config.cjs`; keep that relationship.
+- The app runs compiled output from `dist/main.js` in production/PM2.
+- The local process manager standard is PM2, not a visible terminal running
+  `npm run start:prod`.
+- Model hosts are infrastructure. Caller services own task prompts and task
+  semantics.
 
-Runtime settings live in one place: `host.config.cjs`.
-
-The configured server binds to the host and port in `host.config.cjs`, so another computer on the
-same Wi-Fi can call:
+Relevant contract source:
 
 ```text
-http://<this-computer-lan-ip>:<configured-port>/v2/infer
+../swirlock-chatbot-contracts/docs/versions/v2/openapi/model-host.openapi.yaml
+../swirlock-chatbot-contracts/docs/versions/v2/INTERNAL_INFRASTRUCTURE.md
 ```
 
-Make sure Windows Firewall allows inbound TCP traffic on the configured port.
+## File Map
 
-## Model Selection
+- `host.config.cjs`: single source of truth for host, port, model, Ollama URL,
+  keep-alive, body limit, and model feature flags.
+- `ecosystem.config.cjs`: PM2 app definition; imports `host.config.cjs`.
+- `src/env.ts`: loads `host.config.cjs` into `process.env` at app startup.
+- `src/main.ts`: Nest bootstrap, CORS, body limits, static `/test`, WebSocket
+  attachment, host/port binding.
+- `src/llm/llm.controller.ts`: HTTP API routes and status codes.
+- `src/llm/llm.websocket.ts`: `WS /v2/infer/stream`.
+- `src/llm/llm.service.ts`: Ollama calls, request validation, model lifecycle,
+  health/status, queueing, and streaming.
+- `src/llm/types.ts`: local TypeScript shape of the Model Host API.
+- `public/test/index.html`: browser test client for streaming inference.
 
-The server hosts exactly one model per running process. Change the hosted model in
-`host.config.cjs` by editing `env.OLLAMA_MODEL`.
+## Runtime Configuration
 
-The model must be present in `env.OLLAMA_MODELS`, the comma-separated allow-list in the same file.
-The server refuses to start if `env.OLLAMA_MODEL` is not in that list, so a typo cannot silently
-launch the wrong model.
+Change runtime settings only in `host.config.cjs`.
 
-Image input is controlled separately with `env.MODEL_IMAGE_INPUT`. Keep it `true` for
-vision-capable models. Set it to `false` for a text-only model.
+Important values:
 
-## Browser Test Page
+- `env.PORT`
+- `env.HOST`
+- `env.OLLAMA_HOST`
+- `env.OLLAMA_MODELS`
+- `env.OLLAMA_MODEL`
+- `env.OLLAMA_KEEP_ALIVE`
+- `env.PRELOAD_MODEL`
+- `env.MODEL_IMAGE_INPUT`
+- `env.MODEL_THINKING`
+- `env.JSON_BODY_LIMIT`
 
-Open this URL on the host machine:
+`env.OLLAMA_MODEL` must be present in `env.OLLAMA_MODELS`. Startup fails if
+required config is missing or internally inconsistent.
+
+## Local Operation
+
+Install and build:
+
+```powershell
+npm install -g pm2
+npm install
+npm run build
+```
+
+Run under PM2:
+
+```powershell
+pm2 start ecosystem.config.cjs
+pm2 status
+pm2 save
+```
+
+Check logs:
+
+```powershell
+pm2 logs swirlock-llm-host
+```
+
+Restart after code or config changes:
+
+```powershell
+npm run build
+pm2 restart ecosystem.config.cjs --update-env
+pm2 save
+```
+
+Stop the service:
+
+```powershell
+pm2 stop swirlock-llm-host
+```
+
+PM2 restores saved processes with:
+
+```powershell
+pm2 resurrect
+```
+
+On this Windows machine, startup after user logon is handled by a Startup-folder
+script that runs `pm2 resurrect`. For pre-login boot startup, use an elevated
+Windows service or scheduled task.
+
+## Verification
+
+Typecheck and build:
+
+```powershell
+npm run typecheck
+npm run build
+```
+
+Health/status check:
+
+```powershell
+Invoke-WebRequest `
+  -UseBasicParsing `
+  -Headers @{ 'x-correlation-id' = 'local-check' } `
+  http://127.0.0.1:<configured-port>/v2/model/status
+```
+
+Browser test page:
 
 ```text
 http://127.0.0.1:<configured-port>/test
 ```
 
-From another computer on the same Wi-Fi, use:
+From another LAN machine:
 
 ```text
-http://<this-computer-lan-ip>:<configured-port>/test
+http://<host-lan-ip>:<configured-port>/test
 ```
 
-The test page uses the streaming WebSocket endpoint. It has a single composer for text plus
-image attachments, removable image thumbnails, a thinking toggle, and live streamed model output.
+Make sure Windows Firewall allows inbound TCP traffic on the configured port for
+the intended LAN profile.
 
-## Endpoints
+## API Surface
 
-- `POST /v2/infer`
+HTTP:
+
+- `POST /v2/infer` returns `200`
+- `GET /v2/health` returns `200`
+- `GET /v2/model/status` returns `200`
+- `POST /v2/model/preload` returns `202`
+- `POST /v2/model/unload` returns `202`
+
+WebSocket:
+
 - `WS /v2/infer/stream`
-- `GET /v2/health`
-- `GET /v2/model/status`
-- `POST /v2/model/preload`
-- `POST /v2/model/unload`
 
 All HTTP requests require:
 
@@ -69,109 +166,7 @@ All HTTP requests require:
 x-correlation-id: <stable request or turn id>
 ```
 
-## Inference
-
-Text-only request:
-
-```json
-{
-  "requestContext": {
-    "callerService": "rag-engine",
-    "requestedAt": "2026-04-29T12:00:00Z"
-  },
-  "input": {
-    "parts": [
-      {
-        "type": "text",
-        "text": "Summarize this paragraph."
-      }
-    ]
-  },
-  "options": {
-    "thinking": false,
-    "responseFormat": "text",
-    "ollama": {
-      "temperature": 0.2
-    }
-  }
-}
-```
-
-Text plus image request:
-
-```json
-{
-  "requestContext": {
-    "callerService": "context-fragmenter",
-    "priority": 10,
-    "requestedAt": "2026-04-29T12:00:00Z"
-  },
-  "input": {
-    "parts": [
-      {
-        "type": "text",
-        "text": "Describe only visible facts in this image."
-      },
-      {
-        "type": "image",
-        "imageBase64": "<base64 image or data:image/png;base64,...>",
-        "mimeType": "image/png"
-      }
-    ]
-  }
-}
-```
-
-Images can also be supplied with `imageUrl` instead of `imageBase64`.
-
-Response:
-
-```json
-{
-  "meta": {
-    "requestId": "9bd77b0c-a99e-4ed2-a316-9126930ecf57",
-    "correlationId": "example-correlation-id",
-    "apiVersion": "v2",
-    "servedAt": "2026-04-29T12:00:01.000Z"
-  },
-  "data": {
-    "modelId": "configured-model-id",
-    "output": {
-      "text": "The image shows ..."
-    },
-    "finishReason": "stop",
-    "generatedAt": "2026-04-29T12:00:01.000Z",
-    "appliedOptions": {
-      "responseFormat": "text",
-      "thinking": false,
-      "ollama": {
-        "temperature": 0.2
-      }
-    }
-  }
-}
-```
-
-`GET /v2/model/status` reports the active model and the configured model list:
-
-```json
-{
-  "data": {
-    "modelId": "configured-model-id",
-    "availableModels": ["configured-model-id"]
-  }
-}
-```
-
-## Streaming Inference
-
-Connect to:
-
-```text
-ws://<host>:<configured-port>/v2/infer/stream
-```
-
-Send one JSON message per WebSocket connection:
+The WebSocket stream accepts one JSON message per connection:
 
 ```json
 {
@@ -196,7 +191,7 @@ Send one JSON message per WebSocket connection:
 }
 ```
 
-The server streams JSON events:
+Stream event types:
 
 - `accepted`
 - `queued`
@@ -206,57 +201,108 @@ The server streams JSON events:
 - `done`
 - `error`
 
-Open multiple WebSocket connections for multiple callers. The host runs exactly one model request
-at a time and queues the rest.
+## Request Shape
 
-`requestContext.priority` is optional and numeric. Higher numbers run first. If a caller omits
-`priority`, the request is treated as lower priority than every request that provides a finite
-priority number. Requests with the same priority, including omitted-priority requests, run in
-arrival order.
+Text-only request:
 
-Queued events are only a wait-decision snapshot for the already accepted queued request. They
-include:
-
-- `position`: current 1-based position inside the waiting queue
-- `requestsAhead`: active request plus queued requests ahead
-- `queueDepth`: current total queued requests
-- `defaultPriority`: `true` when the caller omitted `requestContext.priority`
-- `priority`: the request priority number, only present when the caller provided one
-- `averageRequestDurationMs`, when the server has recent request duration samples
-- `estimatedWaitMs`, when the server has recent request duration samples
-- `estimatedStartAt`, when the server has recent request duration samples
-
-## Host Protection
-
-The host keeps only host-level protections:
-
-- `env.JSON_BODY_LIMIT` from `host.config.cjs`
-- one hardcoded active model request at a time
-- an in-memory queue for additional requests
-
-The host does not impose text length, image count, image byte, output length, elapsed time, or rate
-limits. Callers can pass Ollama generation settings through `options.ollama`.
-
-`env.MODEL_THINKING` controls the default thinking behavior for model calls.
-
-## Keeping The Model Loaded
-
-The app preloads the model on startup with `env.OLLAMA_KEEP_ALIVE`. Every inference request also
-sends the same keep-alive value.
-
-This is the best Ollama-native way to keep the model resident in RAM/VRAM during normal use. It cannot be absolute: if another app consumes enough VRAM, the OS, driver, or Ollama may evict or fail to load the model.
-
-For constant service on Windows, build the app and run it under PM2:
-
-```powershell
-npm install -g pm2
-npm run build
-pm2 start ecosystem.config.cjs
-pm2 save
+```json
+{
+  "requestContext": {
+    "callerService": "rag-engine",
+    "requestedAt": "2026-04-29T12:00:00Z"
+  },
+  "input": {
+    "parts": [{ "type": "text", "text": "Summarize this paragraph." }]
+  },
+  "options": {
+    "thinking": false,
+    "responseFormat": "text",
+    "ollama": {
+      "temperature": 0.2
+    }
+  }
+}
 ```
+
+Text plus image request:
+
+```json
+{
+  "requestContext": {
+    "callerService": "context-fragmenter",
+    "priority": 10,
+    "requestedAt": "2026-04-29T12:00:00Z"
+  },
+  "input": {
+    "parts": [
+      { "type": "text", "text": "Describe only visible facts in this image." },
+      {
+        "type": "image",
+        "imageBase64": "<base64 image or data:image/png;base64,...>",
+        "mimeType": "image/png"
+      }
+    ]
+  }
+}
+```
+
+Images may use `imageBase64` or `imageUrl`. Exactly one of those fields is
+required for each image part. `imageUrl` must be HTTP or HTTPS and must return an
+image content type.
+
+## Queueing And Capacity
+
+The host exposes one hardcoded model slot. If a request is already active,
+additional requests queue in memory.
+
+Queue order:
+
+1. Higher numeric `requestContext.priority` first.
+2. Earlier arrival first when priorities are equal.
+3. Omitted priority is lower than every finite numeric priority.
+
+Streaming queued events may include:
+
+- `position`
+- `requestsAhead`
+- `queueDepth`
+- `defaultPriority`
+- `priority`
+- `averageRequestDurationMs`
+- `estimatedWaitMs`
+- `estimatedStartAt`
+
+## Model Lifecycle
+
+When `env.PRELOAD_MODEL` is true, the app preloads the configured model during
+Nest module initialization using `env.OLLAMA_KEEP_ALIVE`.
+
+Every inference request also sends the same keep-alive value to Ollama.
+
+Lifecycle commands:
+
+- `POST /v2/model/preload`: load or refresh keep-alive for the configured model.
+- `POST /v2/model/unload`: ask Ollama to unload the configured model with
+  `keep_alive: 0`.
+
+## Boundaries And Non-Goals
+
+This service does not:
+
+- create final chatbot answers as a product concern
+- decide whether retrieval or memory is needed
+- perform RAG
+- perform memory extraction or consolidation
+- store images durably
+- generate images
+- impose task-level token, elapsed-time, image-count, or rate limits
+
+Caller services own task-level limits and may pass Ollama runtime settings
+through `options.ollama`.
 
 ## Notes
 
-- Ollama must be running locally on this machine.
-- Runtime settings are defined in `host.config.cjs`.
-- This host implements the Swirlock v2 Model Host API.
+- Ollama must be running locally at `env.OLLAMA_HOST`.
+- This service is designed for trusted LAN use inside the Swirlock ecosystem.
+- External/public interactions should go through the appropriate Swirlock
+  domain services, not directly to this model host.
