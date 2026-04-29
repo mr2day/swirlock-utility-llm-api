@@ -1,4 +1,3 @@
-export type Priority = 'interactive' | 'background' | 'maintenance';
 export type FinishReason = 'stop' | 'length' | 'error';
 export type ResponseFormat = 'text' | 'json';
 export type ModelLifecycleStatus = 'loading' | 'loaded' | 'unloading' | 'unloaded' | 'unsupported';
@@ -17,7 +16,7 @@ export interface ApiEnvelope<TData> {
 
 export interface RequestContext {
   callerService: string;
-  priority: Priority;
+  priority: number;
   requestedAt: string;
   debug?: boolean;
 }
@@ -54,7 +53,6 @@ export interface InferRequest {
 
 export interface InferData {
   modelId: string;
-  registrationNumber: string;
   output: {
     text: string;
   };
@@ -76,7 +74,6 @@ export interface ModelCapacity {
   activeRequests: number;
   modelSlots: number;
   queueDepth: number;
-  currentRegistrationNumber?: string;
   averageRequestDurationMs?: number;
 }
 

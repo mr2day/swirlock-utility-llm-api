@@ -43,46 +43,38 @@ interface RuntimeState {
 }
 
 interface QueueEntry {
-  registrationNumber: string;
   priority: RequestContext['priority'];
   sequence: number;
   resolve: (slot: AcquiredModelSlot) => void;
   reject: (error: Error) => void;
   signal?: AbortSignal;
+  notifyQueued?: (info: QueueWaitInfo) => void;
 }
 
 interface AcquiredModelSlot {
-  registrationNumber: string;
   release: () => void;
 }
 
-interface QueueEstimate {
-  registrationNumber: string;
+interface QueueWaitInfo {
   position: number;
+  requestsAhead: number;
+  queueDepth: number;
+  priority: number;
+  averageRequestDurationMs?: number;
   estimatedWaitMs?: number;
   estimatedStartAt?: string;
-  tryAgainAt?: string;
 }
 
 export type StreamEvent =
-  | {
-      type: 'accepted';
-      meta: ReturnType<typeof createApiMeta>;
-      data: { registrationNumber: string };
-    }
-  | { type: 'queued'; meta: ReturnType<typeof createApiMeta>; data: QueueEstimate }
-  | {
-      type: 'started';
-      meta: ReturnType<typeof createApiMeta>;
-      data: { registrationNumber: string };
-    }
+  | { type: 'accepted'; meta: ReturnType<typeof createApiMeta> }
+  | { type: 'queued'; meta: ReturnType<typeof createApiMeta>; data: QueueWaitInfo }
+  | { type: 'started'; meta: ReturnType<typeof createApiMeta> }
   | { type: 'thinking'; meta: ReturnType<typeof createApiMeta>; data: { text: string } }
   | { type: 'chunk'; meta: ReturnType<typeof createApiMeta>; data: { text: string } }
   | {
       type: 'done';
       meta: ReturnType<typeof createApiMeta>;
       data: {
-        registrationNumber: string;
         finishReason: 'stop' | 'length' | 'error';
         appliedOptions: InferenceOptions;
       };
@@ -99,8 +91,6 @@ export class LlmService implements OnModuleInit {
   private readonly thinkingEnabled = getBooleanEnv('MODEL_THINKING', false);
   private activeRequests = 0;
   private queueSequence = 0;
-  private registrationSequence = 0;
-  private currentRegistrationNumber: string | undefined;
   private readonly waitQueue: QueueEntry[] = [];
   private readonly recentRequestDurationsMs: number[] = [];
 
@@ -153,7 +143,6 @@ export class LlmService implements OnModuleInit {
         meta: createApiMeta(correlationId),
         data: {
           modelId: response.model,
-          registrationNumber: slot.registrationNumber,
           output: {
             text: response.message?.content ?? '',
           },
@@ -179,15 +168,11 @@ export class LlmService implements OnModuleInit {
 
     const meta = createApiMeta(correlationId);
 
-    const slot = await this.acquireModelSlot(request.requestContext.priority, signal, (estimate) =>
-      emit({ type: 'queued', meta, data: estimate }),
+    const slot = await this.acquireModelSlot(request.requestContext.priority, signal, (waitInfo) =>
+      emit({ type: 'queued', meta, data: waitInfo }),
     );
 
-    emit({
-      type: 'accepted',
-      meta,
-      data: { registrationNumber: slot.registrationNumber },
-    });
+    emit({ type: 'accepted', meta });
 
     try {
       const input = await this.normalizeInput(request);
@@ -200,7 +185,7 @@ export class LlmService implements OnModuleInit {
         },
       ];
 
-      emit({ type: 'started', meta, data: { registrationNumber: slot.registrationNumber } });
+      emit({ type: 'started', meta });
 
       const stream = await this.ollama.chat({
         model: this.modelId,
@@ -241,7 +226,6 @@ export class LlmService implements OnModuleInit {
         type: 'done',
         meta,
         data: {
-          registrationNumber: slot.registrationNumber,
           finishReason: mapFinishReason(finalChunk?.done_reason),
           appliedOptions: appliedOptions.publicOptions,
         },
@@ -280,7 +264,6 @@ export class LlmService implements OnModuleInit {
           activeRequests: this.activeRequests,
           modelSlots: MODEL_SLOTS,
           queueDepth: this.waitQueue.length,
-          currentRegistrationNumber: this.currentRegistrationNumber,
           averageRequestDurationMs: this.averageRequestDurationMs,
         },
         runtime: {
@@ -492,28 +475,27 @@ export class LlmService implements OnModuleInit {
   private acquireModelSlot(
     priority: RequestContext['priority'],
     signal?: AbortSignal,
-    onQueued?: (estimate: QueueEstimate) => void,
+    onQueued?: (waitInfo: QueueWaitInfo) => void,
   ): Promise<AcquiredModelSlot> {
-    const registrationNumber = this.nextRegistrationNumber();
-
     if (this.activeRequests < MODEL_SLOTS) {
-      return Promise.resolve(this.startModelSlot(registrationNumber));
+      return Promise.resolve(this.startModelSlot());
     }
 
     return new Promise((resolve, reject) => {
       const entry: QueueEntry = {
-        registrationNumber,
         priority,
         sequence: this.queueSequence++,
         resolve,
         reject,
         signal,
+        notifyQueued: onQueued,
       };
 
       const abortQueued = () => {
         const index = this.waitQueue.indexOf(entry);
         if (index >= 0) {
           this.waitQueue.splice(index, 1);
+          this.emitQueueUpdates();
           reject(validationFailed('Queued model request was aborted before it started.'));
         }
       };
@@ -521,28 +503,21 @@ export class LlmService implements OnModuleInit {
       signal?.addEventListener('abort', abortQueued, { once: true });
 
       this.waitQueue.push(entry);
-      onQueued?.(this.queueEstimate(entry));
+      this.emitQueueUpdates();
     });
   }
 
-  private startModelSlot(registrationNumber: string): AcquiredModelSlot {
+  private startModelSlot(): AcquiredModelSlot {
     const startedAt = Date.now();
     this.activeRequests += 1;
-    this.currentRegistrationNumber = registrationNumber;
 
     return {
-      registrationNumber,
-      release: () => this.releaseModelSlot(registrationNumber, startedAt),
+      release: () => this.releaseModelSlot(startedAt),
     };
   }
 
-  private releaseModelSlot(registrationNumber: string, startedAt: number): void {
+  private releaseModelSlot(startedAt: number): void {
     this.recordRequestDuration(Date.now() - startedAt);
-
-    if (this.currentRegistrationNumber === registrationNumber) {
-      this.currentRegistrationNumber = undefined;
-    }
-
     this.activeRequests = Math.max(0, this.activeRequests - 1);
     this.startNextQueuedRequest();
   }
@@ -561,7 +536,9 @@ export class LlmService implements OnModuleInit {
       return;
     }
 
-    entry.resolve(this.startModelSlot(entry.registrationNumber));
+    const slot = this.startModelSlot();
+    this.emitQueueUpdates();
+    entry.resolve(slot);
   }
 
   private nextQueueIndex(): number {
@@ -570,7 +547,10 @@ export class LlmService implements OnModuleInit {
     for (let index = 1; index < this.waitQueue.length; index += 1) {
       const candidate = this.waitQueue[index];
       const best = this.waitQueue[bestIndex];
-      if (priorityRank(candidate.priority) < priorityRank(best.priority)) {
+      if (
+        candidate.priority > best.priority ||
+        (candidate.priority === best.priority && candidate.sequence < best.sequence)
+      ) {
         bestIndex = index;
       }
     }
@@ -578,22 +558,31 @@ export class LlmService implements OnModuleInit {
     return bestIndex;
   }
 
-  private queueEstimate(entry: QueueEntry): QueueEstimate {
+  private emitQueueUpdates(): void {
+    for (const entry of this.waitQueue) {
+      entry.notifyQueued?.(this.queueWaitInfo(entry));
+    }
+  }
+
+  private queueWaitInfo(entry: QueueEntry): QueueWaitInfo {
     const position = this.queuePosition(entry);
+    const requestsAhead = this.activeRequests + position - 1;
     const averageRequestDurationMs = this.averageRequestDurationMs;
     const estimatedWaitMs =
-      averageRequestDurationMs !== undefined ? position * averageRequestDurationMs : undefined;
+      averageRequestDurationMs !== undefined ? requestsAhead * averageRequestDurationMs : undefined;
     const estimatedStartAt =
       estimatedWaitMs !== undefined
         ? new Date(Date.now() + estimatedWaitMs).toISOString()
         : undefined;
 
     return {
-      registrationNumber: entry.registrationNumber,
       position,
+      requestsAhead,
+      queueDepth: this.waitQueue.length,
+      priority: entry.priority,
+      averageRequestDurationMs,
       estimatedWaitMs,
       estimatedStartAt,
-      tryAgainAt: estimatedStartAt,
     };
   }
 
@@ -601,9 +590,7 @@ export class LlmService implements OnModuleInit {
     return (
       this.waitQueue
         .slice()
-        .sort(
-          (a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.sequence - b.sequence,
-        )
+        .sort((a, b) => b.priority - a.priority || a.sequence - b.sequence)
         .indexOf(entry) + 1
     );
   }
@@ -625,11 +612,6 @@ export class LlmService implements OnModuleInit {
     return Math.round(total / this.recentRequestDurationsMs.length);
   }
 
-  private nextRegistrationNumber(): string {
-    this.registrationSequence += 1;
-    return `U-${String(this.registrationSequence).padStart(6, '0')}`;
-  }
-
   private assertRequestContext(context: RequestContext | undefined): void {
     if (!isRecord(context)) {
       throw validationFailed('requestContext is required.');
@@ -639,10 +621,8 @@ export class LlmService implements OnModuleInit {
       throw validationFailed('requestContext.callerService is required.');
     }
 
-    if (!['interactive', 'background', 'maintenance'].includes(String(context.priority))) {
-      throw validationFailed(
-        'requestContext.priority must be interactive, background, or maintenance.',
-      );
+    if (typeof context.priority !== 'number' || !Number.isFinite(context.priority)) {
+      throw validationFailed('requestContext.priority must be a finite number.');
     }
 
     if (
@@ -710,16 +690,6 @@ export class LlmService implements OnModuleInit {
   private get keepAliveText(): string {
     return formatKeepAlive(this.keepAlive);
   }
-}
-
-function priorityRank(priority: RequestContext['priority']): number {
-  if (priority === 'interactive') {
-    return 0;
-  }
-  if (priority === 'background') {
-    return 1;
-  }
-  return 2;
 }
 
 function normalizeResponseFormat(value: unknown): 'text' | 'json' {

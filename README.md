@@ -63,7 +63,7 @@ Text-only request:
 {
   "requestContext": {
     "callerService": "rag-engine",
-    "priority": "interactive",
+    "priority": 0,
     "requestedAt": "2026-04-29T12:00:00Z"
   },
   "input": {
@@ -90,7 +90,7 @@ Text plus image request:
 {
   "requestContext": {
     "callerService": "context-fragmenter",
-    "priority": "background",
+    "priority": -10,
     "requestedAt": "2026-04-29T12:00:00Z"
   },
   "input": {
@@ -123,7 +123,6 @@ Response:
   },
   "data": {
     "modelId": "qwen3.5:9b",
-    "registrationNumber": "U-000001",
     "output": {
       "text": "The image shows ..."
     },
@@ -157,7 +156,7 @@ Send one JSON message per WebSocket connection:
   "request": {
     "requestContext": {
       "callerService": "browser-test",
-      "priority": "interactive",
+      "priority": 0,
       "requestedAt": "2026-04-29T12:00:00Z"
     },
     "input": {
@@ -185,13 +184,21 @@ The server streams JSON events:
 - `error`
 
 Open multiple WebSocket connections for multiple callers. The host runs exactly one model request
-at a time and queues the rest. Queued events include:
+at a time and queues the rest.
 
-- `registrationNumber`
-- `position`
+`requestContext.priority` is numeric. Higher numbers run first. Requests with the same priority run
+in arrival order.
+
+Queued events are only a wait-decision snapshot for the already accepted queued request. They
+include:
+
+- `position`: current 1-based position inside the waiting queue
+- `requestsAhead`: active request plus queued requests ahead
+- `queueDepth`: current total queued requests
+- `priority`: the request priority number
+- `averageRequestDurationMs`, when the server has recent request duration samples
 - `estimatedWaitMs`, when the server has recent request duration samples
 - `estimatedStartAt`, when the server has recent request duration samples
-- `tryAgainAt`, same value as `estimatedStartAt` for callers that choose to disconnect and retry
 
 ## Host Protection
 
