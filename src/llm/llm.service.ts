@@ -21,6 +21,7 @@ const DEFAULT_MODEL = 'qwen3.5:9b';
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434';
 const MODEL_SLOTS = 1;
 const RECENT_DURATION_SAMPLE_SIZE = 20;
+const LOWEST_PRIORITY = Number.NEGATIVE_INFINITY;
 
 interface NormalizedInput {
   text: string;
@@ -43,12 +44,18 @@ interface RuntimeState {
 }
 
 interface QueueEntry {
-  priority: RequestContext['priority'];
+  sortPriority: number;
+  requestedPriority?: number;
   sequence: number;
   resolve: (slot: AcquiredModelSlot) => void;
   reject: (error: Error) => void;
   signal?: AbortSignal;
   notifyQueued?: (info: QueueWaitInfo) => void;
+}
+
+interface NormalizedPriority {
+  sortPriority: number;
+  requestedPriority?: number;
 }
 
 interface AcquiredModelSlot {
@@ -59,7 +66,8 @@ interface QueueWaitInfo {
   position: number;
   requestsAhead: number;
   queueDepth: number;
-  priority: number;
+  defaultPriority: boolean;
+  priority?: number;
   averageRequestDurationMs?: number;
   estimatedWaitMs?: number;
   estimatedStartAt?: string;
@@ -167,12 +175,11 @@ export class LlmService implements OnModuleInit {
     this.assertRequestContext(request?.requestContext);
 
     const meta = createApiMeta(correlationId);
+    emit({ type: 'accepted', meta });
 
     const slot = await this.acquireModelSlot(request.requestContext.priority, signal, (waitInfo) =>
       emit({ type: 'queued', meta, data: waitInfo }),
     );
-
-    emit({ type: 'accepted', meta });
 
     try {
       const input = await this.normalizeInput(request);
@@ -481,9 +488,12 @@ export class LlmService implements OnModuleInit {
       return Promise.resolve(this.startModelSlot());
     }
 
+    const normalizedPriority = normalizePriority(priority);
+
     return new Promise((resolve, reject) => {
       const entry: QueueEntry = {
-        priority,
+        sortPriority: normalizedPriority.sortPriority,
+        requestedPriority: normalizedPriority.requestedPriority,
         sequence: this.queueSequence++,
         resolve,
         reject,
@@ -547,10 +557,7 @@ export class LlmService implements OnModuleInit {
     for (let index = 1; index < this.waitQueue.length; index += 1) {
       const candidate = this.waitQueue[index];
       const best = this.waitQueue[bestIndex];
-      if (
-        candidate.priority > best.priority ||
-        (candidate.priority === best.priority && candidate.sequence < best.sequence)
-      ) {
+      if (compareQueueEntries(candidate, best) < 0) {
         bestIndex = index;
       }
     }
@@ -579,7 +586,8 @@ export class LlmService implements OnModuleInit {
       position,
       requestsAhead,
       queueDepth: this.waitQueue.length,
-      priority: entry.priority,
+      defaultPriority: entry.requestedPriority === undefined,
+      ...(entry.requestedPriority !== undefined ? { priority: entry.requestedPriority } : {}),
       averageRequestDurationMs,
       estimatedWaitMs,
       estimatedStartAt,
@@ -587,12 +595,7 @@ export class LlmService implements OnModuleInit {
   }
 
   private queuePosition(entry: QueueEntry): number {
-    return (
-      this.waitQueue
-        .slice()
-        .sort((a, b) => b.priority - a.priority || a.sequence - b.sequence)
-        .indexOf(entry) + 1
-    );
+    return this.waitQueue.slice().sort(compareQueueEntries).indexOf(entry) + 1;
   }
 
   private recordRequestDuration(durationMs: number): void {
@@ -621,8 +624,11 @@ export class LlmService implements OnModuleInit {
       throw validationFailed('requestContext.callerService is required.');
     }
 
-    if (typeof context.priority !== 'number' || !Number.isFinite(context.priority)) {
-      throw validationFailed('requestContext.priority must be a finite number.');
+    if (
+      context.priority !== undefined &&
+      (typeof context.priority !== 'number' || !Number.isFinite(context.priority))
+    ) {
+      throw validationFailed('requestContext.priority must be a finite number when provided.');
     }
 
     if (
@@ -702,6 +708,26 @@ function normalizeResponseFormat(value: unknown): 'text' | 'json' {
   }
 
   throw validationFailed('options.responseFormat must be text or json.');
+}
+
+function normalizePriority(value: RequestContext['priority']): NormalizedPriority {
+  if (value === undefined) {
+    return { sortPriority: LOWEST_PRIORITY };
+  }
+
+  return { sortPriority: value, requestedPriority: value };
+}
+
+function compareQueueEntries(a: QueueEntry, b: QueueEntry): number {
+  if (a.sortPriority > b.sortPriority) {
+    return -1;
+  }
+
+  if (a.sortPriority < b.sortPriority) {
+    return 1;
+  }
+
+  return a.sequence - b.sequence;
 }
 
 function normalizeOllamaOptions(value: unknown): Record<string, unknown> | undefined {

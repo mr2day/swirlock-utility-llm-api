@@ -16,7 +16,7 @@ export interface ApiEnvelope<TData> {
 
 export interface RequestContext {
   callerService: string;
-  priority: number;
+  priority?: number;
   requestedAt: string;
   debug?: boolean;
 }

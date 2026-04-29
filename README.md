@@ -63,7 +63,6 @@ Text-only request:
 {
   "requestContext": {
     "callerService": "rag-engine",
-    "priority": 0,
     "requestedAt": "2026-04-29T12:00:00Z"
   },
   "input": {
@@ -90,7 +89,7 @@ Text plus image request:
 {
   "requestContext": {
     "callerService": "context-fragmenter",
-    "priority": -10,
+    "priority": 10,
     "requestedAt": "2026-04-29T12:00:00Z"
   },
   "input": {
@@ -156,7 +155,6 @@ Send one JSON message per WebSocket connection:
   "request": {
     "requestContext": {
       "callerService": "browser-test",
-      "priority": 0,
       "requestedAt": "2026-04-29T12:00:00Z"
     },
     "input": {
@@ -186,8 +184,10 @@ The server streams JSON events:
 Open multiple WebSocket connections for multiple callers. The host runs exactly one model request
 at a time and queues the rest.
 
-`requestContext.priority` is numeric. Higher numbers run first. Requests with the same priority run
-in arrival order.
+`requestContext.priority` is optional and numeric. Higher numbers run first. If a caller omits
+`priority`, the request is treated as lower priority than every request that provides a finite
+priority number. Requests with the same priority, including omitted-priority requests, run in
+arrival order.
 
 Queued events are only a wait-decision snapshot for the already accepted queued request. They
 include:
@@ -195,7 +195,8 @@ include:
 - `position`: current 1-based position inside the waiting queue
 - `requestsAhead`: active request plus queued requests ahead
 - `queueDepth`: current total queued requests
-- `priority`: the request priority number
+- `defaultPriority`: `true` when the caller omitted `requestContext.priority`
+- `priority`: the request priority number, only present when the caller provided one
 - `averageRequestDurationMs`, when the server has recent request duration samples
 - `estimatedWaitMs`, when the server has recent request duration samples
 - `estimatedStartAt`, when the server has recent request duration samples

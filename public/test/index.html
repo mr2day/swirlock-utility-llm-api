@@ -499,7 +499,7 @@
             </button>
             <div class="setting">
               <label for="priority">Priority</label>
-              <input id="priority" type="number" step="1" value="0" />
+              <input id="priority" type="number" step="1" placeholder="lowest" />
             </div>
             <div class="setting">
               <label for="temperature">Temperature</label>
@@ -722,11 +722,19 @@
           });
         }
 
+        const requestContext = {
+          callerService: "browser-test",
+          requestedAt: new Date().toISOString(),
+        };
+        const priority = priorityEl.value.trim();
+
+        if (priority) {
+          requestContext.priority = Number(priority);
+        }
+
         return {
           requestContext: {
-            callerService: "browser-test",
-            priority: Number(priorityEl.value || 0),
-            requestedAt: new Date().toISOString(),
+            ...requestContext,
           },
           input: { parts },
           options: {
