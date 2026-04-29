@@ -3,9 +3,9 @@ import { Ollama, type ChatResponse, type Message, type Options } from 'ollama';
 import { upstreamUnavailable, validationFailed } from './api-error';
 import {
   formatKeepAlive,
-  getBooleanEnv,
-  getStringEnv,
-  getStringListEnv,
+  getRequiredBooleanEnv,
+  getRequiredStringEnv,
+  getRequiredStringListEnv,
   parseKeepAlive,
 } from './runtime';
 import { createApiMeta } from './response-meta';
@@ -23,9 +23,6 @@ import type {
   RequestContext,
 } from './types';
 
-const DEFAULT_MODEL = 'qwen3.5:9b';
-const DEFAULT_MODEL_LIST = ['qwen3.5:9b', 'gemma4:e4b'];
-const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434';
 const MODEL_SLOTS = 1;
 const RECENT_DURATION_SAMPLE_SIZE = 20;
 const LOWEST_PRIORITY = Number.NEGATIVE_INFINITY;
@@ -98,16 +95,16 @@ export type StreamEvent =
 @Injectable()
 export class LlmService implements OnModuleInit {
   private readonly logger = new Logger(LlmService.name);
-  private readonly availableModels = getStringListEnv('OLLAMA_MODELS', DEFAULT_MODEL_LIST);
+  private readonly availableModels = getRequiredStringListEnv('OLLAMA_MODELS');
   private readonly modelId = selectConfiguredModel(
-    getStringEnv('OLLAMA_MODEL', DEFAULT_MODEL),
+    getRequiredStringEnv('OLLAMA_MODEL'),
     this.availableModels,
   );
-  private readonly ollamaHost = getStringEnv('OLLAMA_HOST', DEFAULT_OLLAMA_HOST);
-  private readonly keepAlive = parseKeepAlive(getStringEnv('OLLAMA_KEEP_ALIVE', '-1'));
-  private readonly preloadModel = getBooleanEnv('PRELOAD_MODEL', true);
-  private readonly imageInputEnabled = getBooleanEnv('MODEL_IMAGE_INPUT', true);
-  private readonly thinkingEnabled = getBooleanEnv('MODEL_THINKING', false);
+  private readonly ollamaHost = getRequiredStringEnv('OLLAMA_HOST');
+  private readonly keepAlive = parseKeepAlive(getRequiredStringEnv('OLLAMA_KEEP_ALIVE'));
+  private readonly preloadModel = getRequiredBooleanEnv('PRELOAD_MODEL');
+  private readonly imageInputEnabled = getRequiredBooleanEnv('MODEL_IMAGE_INPUT');
+  private readonly thinkingEnabled = getRequiredBooleanEnv('MODEL_THINKING');
   private activeRequests = 0;
   private queueSequence = 0;
   private readonly waitQueue: QueueEntry[] = [];

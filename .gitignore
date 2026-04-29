@@ -30,7 +30,6 @@ coverage/
 # Environment files
 .env
 .env.*
-!.env.example
 
 # Package manager caches
 .npm/

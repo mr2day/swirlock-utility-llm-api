@@ -7,10 +7,11 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './http-exception.filter';
 import { LlmService } from './llm/llm.service';
 import { attachLlmWebSocketServer } from './llm/llm.websocket';
+import { getRequiredStringEnv } from './llm/runtime';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  const jsonLimit = process.env.JSON_BODY_LIMIT ?? '256mb';
+  const jsonLimit = getRequiredStringEnv('JSON_BODY_LIMIT');
 
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableCors({ origin: true });
@@ -19,11 +20,20 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: jsonLimit }));
   attachLlmWebSocketServer(app.getHttpServer(), app.get(LlmService));
 
-  const port = Number(process.env.PORT ?? 3000);
-  const host = process.env.HOST ?? '0.0.0.0';
+  const port = parsePort(getRequiredStringEnv('PORT'));
+  const host = getRequiredStringEnv('HOST');
 
   await app.listen(port, host);
   console.log(`Swirlock LLM Host listening on http://${host}:${port}`);
 }
 
 void bootstrap();
+
+function parsePort(value: string): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error('PORT must be an integer between 1 and 65535 in host.config.cjs.');
+  }
+
+  return port;
+}

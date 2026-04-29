@@ -1,43 +1,36 @@
-export function getStringEnv(name: string, fallback: string): string {
-  const value = process.env[name];
-  return value && value.trim().length > 0 ? value : fallback;
-}
-
-export function getStringListEnv(name: string, fallback: string[]): string[] {
+export function getRequiredStringEnv(name: string): string {
   const value = process.env[name];
   if (!value || value.trim().length === 0) {
-    return fallback;
+    throw new Error(`${name} must be defined in host.config.cjs.`);
   }
 
+  return value;
+}
+
+export function getRequiredStringListEnv(name: string): string[] {
+  const value = getRequiredStringEnv(name);
   const values = value
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
 
-  return values.length > 0 ? values : fallback;
-}
-
-export function getNumberEnv(name: string, fallback: number): number {
-  const value = process.env[name];
-  if (!value) {
-    return fallback;
+  if (values.length === 0) {
+    throw new Error(`${name} must contain at least one value in host.config.cjs.`);
   }
 
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return values;
 }
 
-export function getIntegerEnv(name: string, fallback: number): number {
-  return Math.trunc(getNumberEnv(name, fallback));
-}
-
-export function getBooleanEnv(name: string, fallback: boolean): boolean {
-  const value = process.env[name];
-  if (value === undefined) {
-    return fallback;
+export function getRequiredBooleanEnv(name: string): boolean {
+  const value = getRequiredStringEnv(name).toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(value)) {
+    return false;
   }
 
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+  throw new Error(`${name} must be a boolean value in host.config.cjs.`);
 }
 
 export function parseKeepAlive(value: string): string | number {
