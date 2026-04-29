@@ -23,6 +23,20 @@ http://<this-computer-lan-ip>:3000/v2/infer
 
 Make sure Windows Firewall allows inbound TCP traffic on port `3000`.
 
+## Browser Test Page
+
+Open this URL on the host machine:
+
+```text
+http://127.0.0.1:3000/test
+```
+
+From another computer on the same Wi-Fi, use:
+
+```text
+http://<this-computer-lan-ip>:3000/test
+```
+
 ## Endpoints
 
 - `POST /v2/infer`

@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import './env';
-import { json, urlencoded } from 'express';
+import { join } from 'node:path';
+import { json, static as serveStatic, urlencoded } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './http-exception.filter';
@@ -11,6 +12,7 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableCors({ origin: true });
+  app.use('/test', serveStatic(join(process.cwd(), 'public', 'test'), { index: 'index.html' }));
   app.use(json({ limit: jsonLimit }));
   app.use(urlencoded({ extended: true, limit: jsonLimit }));
 
