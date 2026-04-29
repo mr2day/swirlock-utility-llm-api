@@ -29,6 +29,7 @@
       body {
         margin: 0;
         min-height: 100vh;
+        min-height: 100dvh;
         background: var(--bg);
         color: var(--text);
         font-family:
@@ -57,15 +58,17 @@
         display: grid;
         grid-template-rows: auto 1fr auto;
         min-height: 100vh;
+        min-height: 100dvh;
       }
 
       .topbar {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
+        flex-direction: column;
         justify-content: space-between;
-        gap: 18px;
-        min-height: 56px;
-        padding: 12px 18px;
+        gap: 6px;
+        min-height: 58px;
+        padding: 10px 12px;
         border-bottom: 1px solid var(--line);
         background: rgba(16, 17, 20, 0.92);
         backdrop-filter: blur(12px);
@@ -85,7 +88,7 @@
         min-width: 0;
         color: var(--muted);
         font-size: 13px;
-        text-align: right;
+        text-align: left;
         overflow-wrap: anywhere;
       }
 
@@ -98,15 +101,15 @@
       }
 
       .messages {
-        width: min(920px, calc(100vw - 28px));
+        width: min(920px, calc(100vw - 20px));
         margin: 0 auto;
-        padding: 24px 0 28px;
+        padding: 16px 0 22px;
       }
 
       .empty-state {
         display: grid;
         place-items: center;
-        min-height: calc(100vh - 260px);
+        min-height: calc(100dvh - 250px);
         color: var(--muted);
         text-align: center;
       }
@@ -115,22 +118,22 @@
         display: block;
         margin-bottom: 8px;
         color: var(--text);
-        font-size: 22px;
+        font-size: 20px;
         font-weight: 700;
       }
 
       .message {
         display: grid;
-        grid-template-columns: 36px minmax(0, 1fr);
-        gap: 12px;
-        margin: 0 0 22px;
+        grid-template-columns: 30px minmax(0, 1fr);
+        gap: 9px;
+        margin: 0 0 18px;
       }
 
       .avatar {
         display: grid;
         place-items: center;
-        width: 36px;
-        height: 36px;
+        width: 30px;
+        height: 30px;
         border-radius: 8px;
         background: var(--surface-2);
         color: var(--muted);
@@ -152,8 +155,8 @@
       .bubble {
         min-width: 0;
         width: fit-content;
-        max-width: min(760px, 100%);
-        padding: 12px 14px;
+        max-width: 100%;
+        padding: 10px 12px;
         border-radius: 8px;
         border: 1px solid transparent;
         background: transparent;
@@ -192,8 +195,8 @@
       }
 
       .message-thumb {
-        width: 112px;
-        height: 82px;
+        width: 96px;
+        height: 72px;
         border-radius: 8px;
         border: 1px solid var(--line);
         object-fit: cover;
@@ -253,12 +256,12 @@
         position: sticky;
         bottom: 0;
         z-index: 4;
-        padding: 14px;
+        padding: 10px 8px max(10px, env(safe-area-inset-bottom));
         background: linear-gradient(rgba(16, 17, 20, 0), var(--bg) 22px);
       }
 
       .composer {
-        width: min(920px, calc(100vw - 28px));
+        width: min(920px, calc(100vw - 16px));
         margin: 0 auto;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -315,15 +318,15 @@
       .input-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        gap: 8px;
+        gap: 6px;
         align-items: end;
-        padding: 10px;
+        padding: 8px;
       }
 
       textarea {
         width: 100%;
-        min-height: 52px;
-        max-height: 210px;
+        min-height: 48px;
+        max-height: 170px;
         resize: none;
         border: 0;
         outline: none;
@@ -340,8 +343,8 @@
       .send {
         display: grid;
         place-items: center;
-        width: 38px;
-        height: 38px;
+        width: 40px;
+        height: 40px;
         border-radius: 8px;
         background: var(--accent);
         color: #06110d;
@@ -355,12 +358,10 @@
 
       .settings {
         display: grid;
-        grid-template-columns:
-          auto minmax(88px, 120px) minmax(88px, 130px) minmax(88px, 120px)
-          auto auto auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
         align-items: center;
-        padding: 0 10px 10px;
+        padding: 0 8px 8px;
       }
 
       .icon-button,
@@ -368,13 +369,14 @@
       .clear {
         display: inline-grid;
         place-items: center;
-        height: 34px;
-        min-width: 34px;
+        height: 36px;
+        min-width: 36px;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--field);
         color: var(--text);
         padding: 0 10px;
+        justify-content: center;
       }
 
       .stop {
@@ -393,6 +395,7 @@
       .setting {
         display: grid;
         gap: 4px;
+        min-width: 0;
       }
 
       .setting label,
@@ -404,7 +407,7 @@
       input,
       select {
         width: 100%;
-        height: 34px;
+        height: 36px;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--field);
@@ -415,8 +418,9 @@
       .check {
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 7px;
-        min-height: 34px;
+        min-height: 36px;
         padding: 0 4px;
         white-space: nowrap;
       }
@@ -431,41 +435,104 @@
         display: none;
       }
 
-      @media (max-width: 760px) {
+      .settings .icon-button,
+      .settings .clear,
+      .settings .stop,
+      .settings .check {
+        width: 100%;
+      }
+
+      @media (min-width: 760px) {
         .topbar {
-          align-items: flex-start;
-          flex-direction: column;
-          gap: 6px;
+          align-items: center;
+          flex-direction: row;
+          gap: 18px;
+          min-height: 56px;
+          padding: 12px 18px;
         }
 
         .status {
-          text-align: left;
+          text-align: right;
         }
 
         .messages {
-          padding-top: 16px;
+          width: min(920px, calc(100vw - 28px));
+          padding: 24px 0 28px;
         }
 
         .message {
-          grid-template-columns: 30px minmax(0, 1fr);
-          gap: 9px;
+          grid-template-columns: 36px minmax(0, 1fr);
+          gap: 12px;
+          margin-bottom: 22px;
         }
 
         .avatar {
-          width: 30px;
-          height: 30px;
+          width: 36px;
+          height: 36px;
+        }
+
+        .bubble {
+          max-width: min(760px, 100%);
+          padding: 12px 14px;
+        }
+
+        .message-thumb {
+          width: 112px;
+          height: 82px;
+        }
+
+        .composer-wrap {
+          padding: 14px;
+        }
+
+        .composer {
+          width: min(920px, calc(100vw - 28px));
+        }
+
+        .input-row {
+          gap: 8px;
+          padding: 10px;
+        }
+
+        textarea {
+          min-height: 52px;
+          max-height: 210px;
+        }
+
+        .send {
+          width: 38px;
+          height: 38px;
         }
 
         .settings {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns:
+            auto minmax(88px, 120px) minmax(88px, 130px) minmax(88px, 120px)
+            auto auto auto;
+          padding: 0 10px 10px;
+        }
+
+        .icon-button,
+        .stop,
+        .clear {
+          height: 34px;
+          min-width: 34px;
         }
 
         .settings .icon-button,
         .settings .clear,
         .settings .stop,
         .settings .check {
-          width: 100%;
-          justify-content: center;
+          width: auto;
+        }
+
+        input,
+        select {
+          height: 34px;
+        }
+
+        .check {
+          justify-content: flex-start;
+          min-height: 34px;
         }
       }
     </style>
