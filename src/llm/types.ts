@@ -51,18 +51,6 @@ export interface InferRequest {
   options?: InferenceOptions;
 }
 
-export interface InferData {
-  modelId: string;
-  output: {
-    text: string;
-  };
-  finishReason: FinishReason;
-  generatedAt: string;
-  appliedOptions?: InferenceOptions;
-}
-
-export type InferResponse = ApiEnvelope<InferData>;
-
 export interface ModelCapabilities {
   textInput: boolean;
   imageInput: boolean;

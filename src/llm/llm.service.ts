@@ -13,7 +13,6 @@ import type {
   HealthResponse,
   ImageInputPart,
   InferRequest,
-  InferResponse,
   InferenceOptions,
   InputPart,
   ModelCapabilities,
@@ -126,51 +125,6 @@ export class LlmService implements OnModuleInit {
       this.logger.warn(
         `Could not preload ${this.modelId}. Requests will fail until Ollama can load it. ${getErrorMessage(error)}`,
       );
-    }
-  }
-
-  async infer(correlationId: string, request: InferRequest): Promise<InferResponse> {
-    this.assertRequestContext(request?.requestContext);
-
-    const slot = await this.acquireModelSlot(request.requestContext.priority);
-
-    try {
-      const input = await this.normalizeInput(request);
-      const appliedOptions = this.normalizeOptions(request.options);
-      const messages: Message[] = [
-        {
-          role: 'user',
-          content: input.text,
-          ...(input.images.length > 0 ? { images: input.images } : {}),
-        },
-      ];
-
-      const response = await this.ollama.chat({
-        model: this.modelId,
-        messages,
-        stream: false,
-        keep_alive: this.keepAlive,
-        think: appliedOptions.thinking,
-        options: appliedOptions.ollamaOptions,
-        ...(appliedOptions.responseFormat === 'json' ? { format: 'json' } : {}),
-      });
-
-      return {
-        meta: createApiMeta(correlationId),
-        data: {
-          modelId: response.model,
-          output: {
-            text: response.message?.content ?? '',
-          },
-          finishReason: mapFinishReason(response.done_reason),
-          generatedAt: new Date().toISOString(),
-          appliedOptions: appliedOptions.publicOptions,
-        },
-      };
-    } catch (error) {
-      throw this.normalizeUpstreamError(error);
-    } finally {
-      slot.release();
     }
   }
 

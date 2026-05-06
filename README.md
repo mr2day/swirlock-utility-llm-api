@@ -150,7 +150,6 @@ the intended LAN profile.
 
 HTTP:
 
-- `POST /v2/infer` returns `200`
 - `GET /v2/health` returns `200`
 - `GET /v2/model/status` returns `200`
 - `POST /v2/model/preload` returns `202`
@@ -166,7 +165,10 @@ All HTTP requests require:
 x-correlation-id: <stable request or turn id>
 ```
 
-The WebSocket stream accepts one JSON message per connection:
+The WebSocket stream is persistent. Service callers keep one connection open
+and send one JSON message per inference request. The host keeps the socket open
+after `done` or `error`, and every event carries the request `correlationId` so
+callers can multiplex multiple in-flight requests over the same connection:
 
 ```json
 {
@@ -200,6 +202,15 @@ Stream event types:
 - `chunk`
 - `done`
 - `error`
+
+Cancel an in-flight request by sending:
+
+```json
+{
+  "type": "cancel",
+  "correlationId": "example-correlation-id"
+}
+```
 
 ## Request Shape
 

@@ -12,6 +12,13 @@ interface StreamRequestMessage {
   request: InferRequest;
 }
 
+interface StreamCancelMessage {
+  type: 'cancel';
+  correlationId: string;
+}
+
+type StreamClientMessage = StreamRequestMessage | StreamCancelMessage;
+
 type StreamSocketEvent =
   | StreamEvent
   | {
@@ -20,6 +27,8 @@ type StreamSocketEvent =
       error: ApiErrorBody;
     };
 
+type CorrelatedStreamSocketEvent = StreamSocketEvent & { correlationId: string };
+
 export function attachLlmWebSocketServer(server: Server, llmService: LlmService): WebSocketServer {
   const webSocketServer = new WebSocketServer({
     server,
@@ -27,28 +36,24 @@ export function attachLlmWebSocketServer(server: Server, llmService: LlmService)
   });
 
   webSocketServer.on('connection', (socket) => {
-    const abortController = new AbortController();
-    let running = false;
+    const activeRequests = new Map<string, AbortController>();
 
     socket.on('close', () => {
-      abortController.abort();
+      for (const controller of activeRequests.values()) {
+        controller.abort();
+      }
+      activeRequests.clear();
     });
 
     socket.on('error', () => {
-      abortController.abort();
+      for (const controller of activeRequests.values()) {
+        controller.abort();
+      }
+      activeRequests.clear();
     });
 
     socket.on('message', (data) => {
-      void handleStreamMessage(
-        socket,
-        data,
-        llmService,
-        abortController,
-        () => running,
-        (value) => {
-          running = value;
-        },
-      );
+      void handleStreamMessage(socket, data, llmService, activeRequests);
     });
   });
 
@@ -59,46 +64,53 @@ async function handleStreamMessage(
   socket: WebSocket,
   data: RawData,
   llmService: LlmService,
-  abortController: AbortController,
-  getRunning: () => boolean,
-  setRunning: (value: boolean) => void,
+  activeRequests: Map<string, AbortController>,
 ): Promise<void> {
-  if (getRunning()) {
-    sendSocketEvent(socket, {
-      type: 'error',
-      meta: createApiMeta('duplicate-websocket-message'),
-      error: validationError('Only one inference request is allowed per WebSocket connection.'),
-    });
-    return;
-  }
-
-  setRunning(true);
-
   let correlationId = 'missing-correlation-id';
 
   try {
-    const message = parseStreamRequest(data);
+    const message = parseStreamMessage(data);
     correlationId = message.correlationId;
+
+    if (message.type === 'cancel') {
+      const active = activeRequests.get(correlationId);
+      active?.abort();
+      activeRequests.delete(correlationId);
+      return;
+    }
+
+    if (activeRequests.has(correlationId)) {
+      sendSocketEvent(socket, {
+        type: 'error',
+        correlationId,
+        meta: createApiMeta(correlationId),
+        error: validationError(`Inference request ${correlationId} is already active.`),
+      });
+      return;
+    }
+
+    const abortController = new AbortController();
+    activeRequests.set(correlationId, abortController);
 
     await llmService.streamInfer(
       correlationId,
       message.request,
-      (event) => sendSocketEvent(socket, event),
+      (event) => sendSocketEvent(socket, withCorrelationId(event, correlationId)),
       abortController.signal,
     );
-
-    closeSocket(socket, 1000, 'done');
   } catch (error) {
     sendSocketEvent(socket, {
       type: 'error',
+      correlationId,
       meta: createApiMeta(correlationId),
       error: normalizeError(error),
     });
-    closeSocket(socket, 1011, 'error');
+  } finally {
+    activeRequests.delete(correlationId);
   }
 }
 
-function parseStreamRequest(data: RawData): StreamRequestMessage {
+function parseStreamMessage(data: RawData): StreamClientMessage {
   let parsed: unknown;
 
   try {
@@ -121,10 +133,10 @@ function parseStreamRequest(data: RawData): StreamRequestMessage {
     );
   }
 
-  if (parsed.type !== 'infer') {
+  if (parsed.type !== 'infer' && parsed.type !== 'cancel') {
     throw new HttpException(
       {
-        error: validationError('WebSocket message type must be infer.'),
+        error: validationError('WebSocket message type must be infer or cancel.'),
       },
       HttpStatus.BAD_REQUEST,
     );
@@ -137,6 +149,13 @@ function parseStreamRequest(data: RawData): StreamRequestMessage {
       },
       HttpStatus.BAD_REQUEST,
     );
+  }
+
+  if (parsed.type === 'cancel') {
+    return {
+      type: 'cancel',
+      correlationId: parsed.correlationId.trim(),
+    };
   }
 
   if (!isRecord(parsed.request)) {
@@ -155,7 +174,7 @@ function parseStreamRequest(data: RawData): StreamRequestMessage {
   };
 }
 
-function sendSocketEvent(socket: WebSocket, event: StreamSocketEvent): void {
+function sendSocketEvent(socket: WebSocket, event: CorrelatedStreamSocketEvent): void {
   if (socket.readyState !== WebSocket.OPEN) {
     return;
   }
@@ -163,10 +182,8 @@ function sendSocketEvent(socket: WebSocket, event: StreamSocketEvent): void {
   socket.send(JSON.stringify(event));
 }
 
-function closeSocket(socket: WebSocket, code: number, reason: string): void {
-  if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-    socket.close(code, reason);
-  }
+function withCorrelationId(event: StreamEvent, correlationId: string): CorrelatedStreamSocketEvent {
+  return { ...event, correlationId };
 }
 
 function normalizeError(error: unknown): ApiErrorBody {

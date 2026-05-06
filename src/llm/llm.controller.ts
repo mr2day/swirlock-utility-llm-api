@@ -3,8 +3,6 @@ import { validationFailed } from './api-error';
 import { LlmService } from './llm.service';
 import type {
   HealthResponse,
-  InferRequest,
-  InferResponse,
   ModelLifecycleRequest,
   ModelLifecycleResponse,
   ModelStatusResponse,
@@ -13,15 +11,6 @@ import type {
 @Controller('v2')
 export class LlmController {
   constructor(private readonly llmService: LlmService) {}
-
-  @Post('infer')
-  @HttpCode(HttpStatus.OK)
-  async infer(
-    @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body() body: InferRequest,
-  ): Promise<InferResponse> {
-    return this.llmService.infer(requireCorrelationId(correlationId), body);
-  }
 
   @Get('health')
   async health(
