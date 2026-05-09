@@ -1,11 +1,10 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import type { Server } from 'node:http';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
+import { MODEL_WS_PATH } from '../config';
 import type { ApiErrorBody } from './api-error';
 import { LlmService, type StreamEvent } from './llm.service';
 import type { InferRequest, ModelLifecycleRequest } from './types';
-
-const MODEL_WS_PATH = '/v5/model';
 
 interface V4Envelope {
   type: string;

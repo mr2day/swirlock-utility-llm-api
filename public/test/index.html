@@ -591,6 +591,7 @@
       </div>
     </div>
 
+    <script src="config.js"></script>
     <script>
       const messages = document.getElementById("messages");
       const emptyState = document.getElementById("emptyState");
@@ -835,7 +836,12 @@
         }
 
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-        const socket = new WebSocket(`${protocol}//${location.host}/v4/model`);
+        const wsPath = window.SWIRLOCK_WS_PATH;
+        if (!wsPath) {
+          setStatus("Missing window.SWIRLOCK_WS_PATH (config.js failed to load).", "error");
+          return;
+        }
+        const socket = new WebSocket(`${protocol}//${location.host}${wsPath}`);
         modelSocket = socket;
 
         socketOpenPromise = new Promise((resolve, reject) => {
