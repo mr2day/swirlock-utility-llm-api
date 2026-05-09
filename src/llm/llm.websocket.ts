@@ -5,20 +5,7 @@ import type { ApiErrorBody } from './api-error';
 import { LlmService, type StreamEvent } from './llm.service';
 import type { InferRequest, ModelLifecycleRequest } from './types';
 
-// Per the v5 model-host contract, implementations may serve both /v4/model
-// and /v5/model from the same process during the migration window. The
-// envelope, message types, and behaviour are identical between v4 and v5;
-// only the URL path is different.
-//
-// Implementation note: a single shared WebSocketServer is created with
-// `noServer: true` and we attach one `upgrade` handler to the HTTP server
-// that routes by path. The naive approach of binding two WebSocketServer
-// instances to the same HTTP server (one per path) does not work with the
-// `ws` library — each instance treats non-matching paths as upgrade
-// failures and destroys the socket, so the two instances cancel each
-// other's connections.
-export const MODEL_WS_PATHS = ['/v4/model', '/v5/model'] as const;
-const MODEL_WS_PATH_SET: ReadonlySet<string> = new Set(MODEL_WS_PATHS);
+const MODEL_WS_PATH = '/v5/model';
 
 interface V4Envelope {
   type: string;
@@ -29,11 +16,11 @@ interface V4Envelope {
 
 type ActiveRequestMap = Map<string, AbortController>;
 
-export function attachLlmWebSocketServer(
-  server: Server,
-  llmService: LlmService,
-): WebSocketServer {
-  const webSocketServer = new WebSocketServer({ noServer: true });
+export function attachLlmWebSocketServer(server: Server, llmService: LlmService): WebSocketServer {
+  const webSocketServer = new WebSocketServer({
+    server,
+    path: MODEL_WS_PATH,
+  });
 
   webSocketServer.on('connection', (socket) => {
     const activeRequests: ActiveRequestMap = new Map();
@@ -42,17 +29,6 @@ export function attachLlmWebSocketServer(
     socket.on('error', () => abortAll(activeRequests));
     socket.on('message', (data) => {
       void handleMessage(socket, data, llmService, activeRequests);
-    });
-  });
-
-  server.on('upgrade', (request, socket, head) => {
-    const requestPath = (request.url ?? '').split('?')[0];
-    if (!MODEL_WS_PATH_SET.has(requestPath)) {
-      socket.destroy();
-      return;
-    }
-    webSocketServer.handleUpgrade(request, socket, head, (ws) => {
-      webSocketServer.emit('connection', ws, request);
     });
   });
 

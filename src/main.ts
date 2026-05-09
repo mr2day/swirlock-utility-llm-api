@@ -5,7 +5,7 @@ import { static as serveStatic } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { LlmService } from './llm/llm.service';
-import { attachLlmWebSocketServer, MODEL_WS_PATHS } from './llm/llm.websocket';
+import { attachLlmWebSocketServer } from './llm/llm.websocket';
 import { getRequiredStringEnv } from './llm/runtime';
 
 async function bootstrap() {
@@ -19,9 +19,7 @@ async function bootstrap() {
   const host = getRequiredStringEnv('HOST');
 
   await app.listen(port, host);
-  for (const path of MODEL_WS_PATHS) {
-    console.log(`Swirlock LLM Host listening for WS on ws://${host}:${port}${path}`);
-  }
+  console.log(`Swirlock LLM Host listening for WS on ws://${host}:${port}/v5/model`);
   console.log(`Test UI available at http://${host}:${port}/test/`);
 }
 
