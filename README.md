@@ -1,12 +1,18 @@
 # Swirlock LLM Host
 
 Generic Model Host implementation for Swirlock. The ecosystem API is
-WebSocket-only in contracts v4.
+WebSocket-only. This host implements the **v5 Model Host contract**
+(`docs/versions/v5/apps/model-host.md` in `swirlock-chatbot-contracts`)
+and continues to serve the v4 endpoint path during the migration window
+so existing v4 callers (RAG Engine, the un-refactored Chat Orchestrator)
+keep working unchanged. The v4 and v5 endpoints are wire-compatible —
+only the URL path differs.
 
-## Endpoint
+## Endpoints
 
 ```text
-WS /v4/model
+WS /v5/model    (current contract; preferred for new callers)
+WS /v4/model    (legacy; identical wire format; supported during migration)
 ```
 
 Client message types:

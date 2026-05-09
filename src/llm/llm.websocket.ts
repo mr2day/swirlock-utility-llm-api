@@ -5,7 +5,11 @@ import type { ApiErrorBody } from './api-error';
 import { LlmService, type StreamEvent } from './llm.service';
 import type { InferRequest, ModelLifecycleRequest } from './types';
 
-const MODEL_WS_PATH = '/v4/model';
+// Per the v5 model-host contract, implementations may serve both /v4/model
+// and /v5/model from the same process during the migration window. The
+// envelope, message types, and behaviour are identical between v4 and v5;
+// only the URL path is different.
+export const MODEL_WS_PATHS = ['/v4/model', '/v5/model'] as const;
 
 interface V4Envelope {
   type: string;
@@ -16,23 +20,25 @@ interface V4Envelope {
 
 type ActiveRequestMap = Map<string, AbortController>;
 
-export function attachLlmWebSocketServer(server: Server, llmService: LlmService): WebSocketServer {
-  const webSocketServer = new WebSocketServer({
-    server,
-    path: MODEL_WS_PATH,
-  });
+export function attachLlmWebSocketServer(
+  server: Server,
+  llmService: LlmService,
+): WebSocketServer[] {
+  return MODEL_WS_PATHS.map((path) => {
+    const webSocketServer = new WebSocketServer({ server, path });
 
-  webSocketServer.on('connection', (socket) => {
-    const activeRequests: ActiveRequestMap = new Map();
+    webSocketServer.on('connection', (socket) => {
+      const activeRequests: ActiveRequestMap = new Map();
 
-    socket.on('close', () => abortAll(activeRequests));
-    socket.on('error', () => abortAll(activeRequests));
-    socket.on('message', (data) => {
-      void handleMessage(socket, data, llmService, activeRequests);
+      socket.on('close', () => abortAll(activeRequests));
+      socket.on('error', () => abortAll(activeRequests));
+      socket.on('message', (data) => {
+        void handleMessage(socket, data, llmService, activeRequests);
+      });
     });
-  });
 
-  return webSocketServer;
+    return webSocketServer;
+  });
 }
 
 async function handleMessage(
