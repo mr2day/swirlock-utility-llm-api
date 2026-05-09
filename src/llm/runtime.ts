@@ -1,7 +1,10 @@
 export function getRequiredStringEnv(name: string): string {
   const value = process.env[name];
   if (!value || value.trim().length === 0) {
-    throw new Error(`${name} must be defined in host.config.cjs.`);
+    throw new Error(
+      `${name} must be defined in host.config.cjs (shared defaults) or host.config.local.cjs (machine-specific overrides). ` +
+        `If this is a fresh clone, copy host.config.local.cjs.example to host.config.local.cjs and fill in the local values.`,
+    );
   }
 
   return value;

@@ -31,6 +31,9 @@ coverage/
 .env
 .env.*
 
+# Local, machine-specific host config overrides
+host.config.local.cjs
+
 # Package manager caches
 .npm/
 .pnpm-store/

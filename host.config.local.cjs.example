@@ -1,0 +1,15 @@
+// Copy this file to `host.config.local.cjs` and edit values for THIS machine.
+// `host.config.local.cjs` is gitignored — your machine-specific overrides
+// will not be committed. Any key listed in the defaults of `host.config.cjs`
+// can be overridden here. The keys below are required (no defaults exist).
+
+module.exports = {
+  env: {
+    // Comma-separated allow-list of models this host is permitted to serve.
+    OLLAMA_MODELS: 'qwen3.5:9b,gemma4:e4b,qwen2.5-coder:14b',
+    // The model this host actually runs. Must be one of OLLAMA_MODELS.
+    OLLAMA_MODEL: 'gemma4:e4b',
+    // Override OLLAMA_HOST here if Ollama is not on the default 127.0.0.1:11434.
+    // OLLAMA_HOST: 'http://127.0.0.1:11434',
+  },
+};
