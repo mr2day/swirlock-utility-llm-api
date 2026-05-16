@@ -145,26 +145,23 @@ export class LlmService implements OnModuleInit {
   });
 
   async onModuleInit(): Promise<void> {
-    // Compute target num_ctx from sources of truth before any
-    // request can land. If this fails, we still serve requests at
-    // the default num_ctx so the host stays available.
+    // Try the equation once eagerly. If ollama isn't reachable yet,
+    // schedule background retries with backoff so we don't get stranded
+    // at the fallback num_ctx forever.
+    await this.tryResolveContextWindowAndPreload(1);
+  }
+
+  private async tryResolveContextWindowAndPreload(
+    attempt: number,
+  ): Promise<void> {
+    let cw: ContextWindowComputation;
     try {
-      this.contextWindow = await this.computeContextWindow();
-      const cw = this.contextWindow;
-      this.logger.log(
-        `Context window resolved: num_ctx=${cw.targetNumCtx}, ` +
-          `prompt budget=${this.promptBudgetTokens}, ` +
-          `kvPerToken=${Math.round(cw.kvPerTokenBytes)} B, ` +
-          `availableForKv=${formatBytes(cw.availableForKvBytes)}` +
-          (cw.fellBackToDefault
-            ? ` (fell back to default: ${cw.fallbackReason})`
-            : ''),
-      );
+      cw = await this.computeContextWindow();
     } catch (error) {
       this.logger.warn(
-        `Context-window computation crashed; using default num_ctx=${this.defaultNumCtx}. ${getErrorMessage(error)}`,
+        `Context-window computation crashed on attempt ${attempt}; using default num_ctx=${this.defaultNumCtx}. ${getErrorMessage(error)}`,
       );
-      this.contextWindow = {
+      cw = {
         targetNumCtx: this.defaultNumCtx,
         rawMaxNumCtx: 0,
         availableForKvBytes: 0,
@@ -174,19 +171,39 @@ export class LlmService implements OnModuleInit {
       };
     }
 
-    if (!this.preloadModel) {
-      return;
+    this.contextWindow = cw;
+    this.logger.log(
+      `Context window resolved (attempt ${attempt}): num_ctx=${cw.targetNumCtx}, ` +
+        `prompt budget=${this.promptBudgetTokens}, ` +
+        `kvPerToken=${Math.round(cw.kvPerTokenBytes)} B, ` +
+        `availableForKv=${formatBytes(cw.availableForKvBytes)}` +
+        (cw.fellBackToDefault
+          ? ` (fell back to default: ${cw.fallbackReason})`
+          : ''),
+    );
+
+    if (this.preloadModel) {
+      try {
+        await this.preloadHostedModel();
+        this.logger.log(
+          `Preloaded ${this.modelId} with keep_alive=${this.keepAliveText}, num_ctx=${this.numCtx} (attempt ${attempt})`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Could not preload ${this.modelId} on attempt ${attempt}. Requests will fail until Ollama can load it. ${getErrorMessage(error)}`,
+        );
+      }
     }
 
-    try {
-      await this.preloadHostedModel();
-      this.logger.log(
-        `Preloaded ${this.modelId} with keep_alive=${this.keepAliveText}, num_ctx=${this.numCtx}`,
-      );
-    } catch (error) {
+    if (cw.fellBackToDefault && isTransientFallback(cw.fallbackReason)) {
+      const backoffMs = Math.min(2000 * 2 ** Math.min(attempt - 1, 5), 60_000);
       this.logger.warn(
-        `Could not preload ${this.modelId}. Requests will fail until Ollama can load it. ${getErrorMessage(error)}`,
+        `Context-window fell back to default because ollama was unreachable; ` +
+          `retrying in ${backoffMs}ms (next attempt ${attempt + 1}).`,
       );
+      setTimeout(() => {
+        void this.tryResolveContextWindowAndPreload(attempt + 1);
+      }, backoffMs);
     }
   }
 
@@ -1015,6 +1032,15 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function isTransientFallback(reason: string | undefined): boolean {
+  if (typeof reason !== 'string') return false;
+  return (
+    reason.startsWith('ollama.show failed') ||
+    reason.startsWith('ollama.list failed') ||
+    reason.includes('did not include')
+  );
 }
 
 function formatBytes(bytes: number): string {
